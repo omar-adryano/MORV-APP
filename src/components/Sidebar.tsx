@@ -9,7 +9,8 @@ import {
   LogOut, 
   Menu, 
   X,
-  CreditCard
+  CreditCard,
+  Smartphone
 } from "lucide-react";
 
 interface SidebarProps {
@@ -58,6 +59,11 @@ export default function Sidebar({
       id: 'assistant',
       label: isRtl ? 'مساعد مورف AI' : 'MORV AI Assistant',
       icon: MessageSquareCode
+    },
+    {
+      id: 'android_portal',
+      label: isRtl ? 'بوابة هاتف MORV' : 'MORV Android Portal',
+      icon: Smartphone
     },
     {
       id: 'settings',

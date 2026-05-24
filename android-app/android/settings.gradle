@@ -1,0 +1,5 @@
+rootProject.name = 'morv'
+include ':app'
+
+apply from: new File(["node", "--print", "require.resolve('react-native/package.json')"].execute(null, null).text.trim(), "../../../expo/scripts/autolinking.gradle");
+useExpoModules()

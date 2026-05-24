@@ -28,6 +28,7 @@ import TaskProductivity from "./components/TaskProductivity";
 import FileManager from "./components/FileManager";
 import MorvAiAssistant from "./components/MorvAiAssistant";
 import UserProfileSettings from "./components/UserProfileSettings";
+import AndroidWorkspace from "./components/AndroidWorkspace";
 import { Transaction, Budget, SavingsGoal, Debt, Subscription, Task, FileDoc, UserProfile, ChatMessage } from "./types";
 
 import { useFirebase } from "./context/FirebaseContext";
@@ -65,7 +66,9 @@ export default function App() {
     onAddChatMessage,
     notifications,
     onMarkNotificationRead,
-    onRemoveNotification
+    onRemoveNotification,
+    receiptScans,
+    onSubmitReceiptScan
   } = useFirebase();
 
   // Core Platform Configuration
@@ -811,6 +814,19 @@ export default function App() {
                 setUserProfile={setUserProfile}
                 lang={lang}
                 setLang={setLang}
+              />
+            </div>
+          )}
+
+          {/* G. NATIVE ANDROID PORTAL & WORKSPACE */}
+          {activeTab === 'android_portal' && (
+            <div className="space-y-6">
+              <AndroidWorkspace 
+                lang={lang}
+                transactions={transactions}
+                setTransactions={setTransactions}
+                onSubmitReceiptScan={onSubmitReceiptScan}
+                receiptScans={receiptScans}
               />
             </div>
           )}
