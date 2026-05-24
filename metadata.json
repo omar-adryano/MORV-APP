@@ -1,0 +1,6 @@
+{
+  "name": "MORV",
+  "description": "منصة لإدارة الأعمال والمالية مدعومة بالذكاء الاصطناعي لسوق مصر والوطن العربي - MORV AI Financial Management System",
+  "requestFramePermissions": ["microphone"],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}

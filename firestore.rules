@@ -1,0 +1,315 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // Global Safety Net (Pillar 1) Catch-all deny
+    match /{document=**} {
+      allow read, write: if false;
+    }
+
+    // ----------------------------------------------------
+    // GLOBAL SECURITY HELPERS (Pillar 3)
+    // ----------------------------------------------------
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    function isEmailVerified() {
+      return isSignedIn() && (request.auth.token.email_verified == true);
+    }
+
+    function isOwner(userId) {
+      return isSignedIn() && request.auth.uid == userId;
+    }
+
+    function isValidId(id) {
+      return id is string && id.size() <= 128 && id.matches('^[a-zA-Z0-9_\\-]+$');
+    }
+
+    function incoming() {
+      return request.resource.data;
+    }
+
+    function existing() {
+      return resource.data;
+    }
+
+    // ----------------------------------------------------
+    // SCHEMA SCHEMA HELPERS (Pillar 2)
+    // ----------------------------------------------------
+    function isValidUserProfile(data) {
+      return data.keys().hasAll(['name', 'email', 'avatarUrl', 'role', 'balanceEGP', 'monthlySavingsGoal'])
+        && data.keys().size() >= 6 && data.keys().size() <= 9
+        && data.name is string && data.name.size() >= 2 && data.name.size() <= 100
+        && data.email is string && data.email.size() >= 5 && data.email.size() <= 150
+        && data.avatarUrl is string && data.avatarUrl.size() <= 500
+        && data.role is string && data.role.size() <= 50
+        && data.balanceEGP is number
+        && data.monthlySavingsGoal is number && data.monthlySavingsGoal >= 0
+        && (!data.keys().hasAny(['salary']) || data.salary is number)
+        && (!data.keys().hasAny(['currency']) || (data.currency is string && data.currency.size() <= 10))
+        && (!data.keys().hasAny(['theme']) || (data.theme is string && (data.theme == 'light' || data.theme == 'dark')));
+    }
+
+    function isValidReceiptScan(data) {
+      return data.keys().hasAll(['id', 'vendor', 'amount', 'category', 'date', 'confidence'])
+        && (data.keys().size() == 6 || (data.keys().size() == 7 && data.keys().hasAny(['extractedItems'])))
+        && data.id is string && isValidId(data.id)
+        && data.vendor is string && data.vendor.size() >= 1 && data.vendor.size() <= 200
+        && data.amount is number && data.amount >= 0
+        && data.category is string && data.category.size() <= 100
+        && data.date is string && data.date.size() == 10
+        && data.confidence is number && data.confidence >= 0 && data.confidence <= 1
+        && (!data.keys().hasAny(['extractedItems']) || (data.extractedItems is list && data.extractedItems.size() <= 50));
+    }
+
+    function isValidAppNotification(data) {
+      return data.keys().hasAll(['id', 'title', 'message', 'type', 'timestamp', 'isRead'])
+        && data.keys().size() == 6
+        && data.id is string && isValidId(data.id)
+        && data.title is string && data.title.size() >= 1 && data.title.size() <= 200
+        && data.message is string && data.message.size() <= 1000
+        && data.type is string && (data.type == 'info' || data.type == 'success' || data.type == 'warning' || data.type == 'error')
+        && data.timestamp is string
+        && data.isRead is bool;
+    }
+
+    function isValidAnalyticsHistoryRecord(data) {
+      return data.keys().hasAll(['id', 'timestamp', 'totalIncome', 'totalExpenses', 'netSavings', 'savingsRate', 'overspendingStatus', 'savingsPrediction'])
+        && data.keys().size() == 8
+        && data.id is string && isValidId(data.id)
+        && data.timestamp is string
+        && data.totalIncome is number && data.totalIncome >= 0
+        && data.totalExpenses is number && data.totalExpenses >= 0
+        && data.netSavings is number
+        && data.savingsRate is number
+        && data.overspendingStatus is string && (data.overspendingStatus == 'healthy' || data.overspendingStatus == 'warning' || data.overspendingStatus == 'critical')
+        && data.savingsPrediction is string && data.savingsPrediction.size() <= 1000;
+    }
+
+    function isValidTransaction(data) {
+      return data.keys().hasAll(['id', 'title', 'amount', 'type', 'category', 'date'])
+        && (data.keys().size() == 6 || (data.keys().size() <= 9 && data.keys().hasAny(['description', 'invoiceNo', 'attachmentName'])))
+        && data.id is string && isValidId(data.id)
+        && data.title is string && data.title.size() >= 2 && data.title.size() <= 200
+        && data.amount is number && data.amount > 0
+        && data.type is string && (data.type == 'income' || data.type == 'expense')
+        && data.category is string && data.category.size() <= 100
+        && data.date is string && data.date.size() == 10;
+    }
+
+    function isValidBudget(data) {
+      return data.keys().hasAll(['id', 'category', 'limitAmount', 'spentAmount', 'period'])
+        && data.keys().size() == 5
+        && data.id is string && isValidId(data.id)
+        && data.category is string && data.category.size() <= 100
+        && data.limitAmount is number && data.limitAmount >= 0
+        && data.spentAmount is number && data.spentAmount >= 0
+        && data.period is string && data.period.size() == 7; // e.g., "2026-05"
+    }
+
+    function isValidSavingsGoal(data) {
+      return data.keys().hasAll(['id', 'title', 'targetAmount', 'currentAmount', 'dueDate', 'category'])
+        && data.keys().size() == 6
+        && data.id is string && isValidId(data.id)
+        && data.title is string && data.title.size() >= 2 && data.title.size() <= 200
+        && data.targetAmount is number && data.targetAmount >= 0
+        && data.currentAmount is number && data.currentAmount >= 0
+        && data.dueDate is string && data.dueDate.size() == 10
+        && data.category is string && data.category.size() <= 100;
+    }
+
+    function isValidDebt(data) {
+      return data.keys().hasAll(['id', 'contactName', 'amount', 'paidAmount', 'dueDate', 'type'])
+        && data.keys().size() == 6
+        && data.id is string && isValidId(data.id)
+        && data.contactName is string && data.contactName.size() >= 2 && data.contactName.size() <= 150
+        && data.amount is number && data.amount >= 0
+        && data.paidAmount is number && data.paidAmount >= 0
+        && data.dueDate is string && data.dueDate.size() == 10
+        && data.type is string && (data.type == 'to_pay' || data.type == 'to_collect');
+    }
+
+    function isValidSubscription(data) {
+      return data.keys().hasAll(['id', 'name', 'amount', 'billingCycle', 'nextBillingDate', 'category', 'isActive'])
+        && data.keys().size() == 7
+        && data.id is string && isValidId(data.id)
+        && data.name is string && data.name.size() >= 2 && data.name.size() <= 150
+        && data.amount is number && data.amount >= 0
+        && data.billingCycle is string && (data.billingCycle == 'monthly' || data.billingCycle == 'yearly')
+        && data.nextBillingDate is string && data.nextBillingDate.size() == 10
+        && data.category is string && data.category.size() <= 100
+        && data.isActive is bool;
+    }
+
+    // Task and priority constraints
+    function isValidTask(data) {
+      return data.keys().hasAll(['id', 'title', 'completed', 'priority', 'category', 'dueDate'])
+        && (data.keys().size() == 6 || (data.keys().size() == 7 && data.keys().hasAny(['time'])))
+        && data.id is string && isValidId(data.id)
+        && data.title is string && data.title.size() >= 2 && data.title.size() <= 200
+        && data.completed is bool
+        && data.priority is string && (data.priority == 'high' || data.priority == 'medium' || data.priority == 'low')
+        && data.category is string && data.category.size() <= 100
+        && data.dueDate is string && data.dueDate.size() == 10;
+    }
+
+    function isValidHabit(data) {
+      return data.keys().hasAll(['id', 'name', 'streak', 'completedToday'])
+        && data.keys().size() == 4
+        && data.id is string && isValidId(data.id)
+        && data.name is string && data.name.size() >= 2 && data.name.size() <= 150
+        && data.streak is int && data.streak >= 0
+        && data.completedToday is bool;
+    }
+
+    function isValidInvoice(data) {
+      return data.keys().hasAll(['id', 'invoiceNumber', 'clientName', 'clientEmail', 'issueDate', 'dueDate', 'status', 'taxRate', 'discount'])
+        && data.keys().size() == 9
+        && data.id is string && isValidId(data.id)
+        && data.invoiceNumber is string && data.invoiceNumber.size() >= 3 && data.invoiceNumber.size() <= 50
+        && data.clientName is string && data.clientName.size() >= 2 && data.clientName.size() <= 150
+        && data.clientEmail is string && data.clientEmail.size() >= 5 && data.clientEmail.size() <= 150
+        && data.issueDate is string && data.issueDate.size() == 10
+        && data.dueDate is string && data.dueDate.size() == 10
+        && data.status is string && (data.status == 'paid' || data.status == 'unpaid' || data.status == 'draft')
+        && data.taxRate is number && data.taxRate >= 0 && data.taxRate <= 100
+        && data.discount is number && data.discount >= 0;
+    }
+
+    function isValidFileDoc(data) {
+      return data.keys().hasAll(['id', 'name', 'size', 'mimeType', 'uploadDate'])
+        && data.keys().size() == 5
+        && data.id is string && isValidId(data.id)
+        && data.name is string && data.name.size() >= 1 && data.name.size() <= 255
+        && data.size is string && data.size.size() <= 30
+        && data.mimeType is string && data.mimeType.size() <= 128
+        && data.uploadDate is string && data.uploadDate.size() == 10;
+    }
+
+    function isValidChatMessage(data) {
+      return data.keys().hasAll(['id', 'sender', 'text', 'timestamp'])
+        && data.keys().size() == 4
+        && data.id is string && isValidId(data.id)
+        && data.sender is string && (data.sender == 'user' || data.sender == 'assistant')
+        && data.text is string && data.text.size() <= 10000
+        && data.timestamp is string;
+    }
+
+    // ----------------------------------------------------
+    // COLLECTIONS / RESOURCES MAPPING (Pillar 6)
+    // ----------------------------------------------------
+
+    // User Profile Document Route
+    match /users/{userId} {
+      allow get: if isOwner(userId);
+      allow create: if isOwner(userId) && isEmailVerified() && isValidUserProfile(incoming());
+      allow update: if isOwner(userId) && isValidUserProfile(incoming());
+      allow delete: if false;
+
+      // Transactions sub-collection
+      match /transactions/{transactionId} {
+        allow list, get: if isOwner(userId);
+        allow create: if isOwner(userId) && isEmailVerified() && isValidTransaction(incoming());
+        allow update: if isOwner(userId) && isValidTransaction(incoming());
+        allow delete: if isOwner(userId);
+      }
+
+      // Budgets sub-collection
+      match /budgets/{budgetId} {
+        allow list, get: if isOwner(userId);
+        allow create: if isOwner(userId) && isEmailVerified() && isValidBudget(incoming());
+        allow update: if isOwner(userId) && isValidBudget(incoming());
+        allow delete: if isOwner(userId);
+      }
+
+      // Saving Goals sub-collection
+      match /savingsGoals/{goalId} {
+        allow list, get: if isOwner(userId);
+        allow create: if isOwner(userId) && isEmailVerified() && isValidSavingsGoal(incoming());
+        allow update: if isOwner(userId) && isValidSavingsGoal(incoming());
+        allow delete: if isOwner(userId);
+      }
+
+      // Debts sub-collection
+      match /debts/{debtId} {
+        allow list, get: if isOwner(userId);
+        allow create: if isOwner(userId) && isEmailVerified() && isValidDebt(incoming());
+        allow update: if isOwner(userId) && isValidDebt(incoming());
+        allow delete: if isOwner(userId);
+      }
+
+      // Subscriptions sub-collection
+      match /subscriptions/{subId} {
+        allow list, get: if isOwner(userId);
+        allow create: if isOwner(userId) && isEmailVerified() && isValidSubscription(incoming());
+        allow update: if isOwner(userId) && isValidSubscription(incoming());
+        allow delete: if isOwner(userId);
+      }
+
+      // Tasks sub-collection
+      match /tasks/{taskId} {
+        allow list, get: if isOwner(userId);
+        allow create: if isOwner(userId) && isEmailVerified() && isValidTask(incoming());
+        allow update: if isOwner(userId) && isValidTask(incoming());
+        allow delete: if isOwner(userId);
+      }
+
+      // Habits sub-collection
+      match /habits/{habitId} {
+        allow list, get: if isOwner(userId);
+        allow create: if isOwner(userId) && isEmailVerified() && isValidHabit(incoming());
+        allow update: if isOwner(userId) && isValidHabit(incoming());
+        allow delete: if isOwner(userId);
+      }
+
+      // Invoices sub-collection
+      match /invoices/{invoiceId} {
+        allow list, get: if isOwner(userId);
+        allow create: if isOwner(userId) && isEmailVerified() && isValidInvoice(incoming());
+        allow update: if isOwner(userId) && isValidInvoice(incoming());
+        allow delete: if isOwner(userId);
+      }
+
+      // Files ledger Cloud sub-collection
+      match /files/{fileId} {
+        allow list, get: if isOwner(userId);
+        allow create: if isOwner(userId) && isEmailVerified() && isValidFileDoc(incoming());
+        allow update: if isOwner(userId) && isValidFileDoc(incoming());
+        allow delete: if isOwner(userId);
+      }
+
+      // Conversational history sub-collection
+      match /chatHistory/{chatId} {
+        allow list, get: if isOwner(userId);
+        allow create: if isOwner(userId) && isEmailVerified() && isValidChatMessage(incoming());
+        // For security audit logs, chat messages are immutable once created
+        allow update, delete: if false;
+      }
+
+      // Receipt scans sub-collection
+      match /receiptScans/{scanId} {
+        allow list, get: if isOwner(userId);
+        allow create: if isOwner(userId) && isEmailVerified() && isValidReceiptScan(incoming());
+        allow update: if isOwner(userId) && isValidReceiptScan(incoming());
+        allow delete: if isOwner(userId);
+      }
+
+      // App Notifications sub-collection
+      match /notifications/{notificationId} {
+        allow list, get: if isOwner(userId);
+        allow create: if isOwner(userId) && isEmailVerified() && isValidAppNotification(incoming());
+        allow update: if isOwner(userId) && isValidAppNotification(incoming());
+        allow delete: if isOwner(userId);
+      }
+
+      // Analytics history snapshot logs sub-collection
+      match /analyticsHistory/{recordId} {
+        allow list, get: if isOwner(userId);
+        allow create: if isOwner(userId) && isEmailVerified() && isValidAnalyticsHistoryRecord(incoming());
+        allow update: if isOwner(userId) && isValidAnalyticsHistoryRecord(incoming());
+        allow delete: if isOwner(userId);
+      }
+    }
+  }
+}
