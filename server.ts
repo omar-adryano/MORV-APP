@@ -1,10 +1,65 @@
 import express from "express";
 import path from "path";
 import dotenv from "dotenv";
+import fs from "fs";
+import https from "https";
 import { createServer as createViteServer } from "vite";
 import { GoogleGenAI, Type } from "@google/genai";
 
 dotenv.config();
+
+// Auto-download missing gradle-wrapper.jar needed for Expo/EAS native build compatibility
+const jarDir = path.join(process.cwd(), "android-app", "android", "gradle", "wrapper");
+const jarPath = path.join(jarDir, "gradle-wrapper.jar");
+
+if (!fs.existsSync(jarDir)) {
+  fs.mkdirSync(jarDir, { recursive: true });
+}
+
+if (!fs.existsSync(jarPath)) {
+  console.log("📥 [Gradle Wrapper Builder] gradle-wrapper.jar is missing. Fetching original binary...");
+  const jarUrl = "https://raw.githubusercontent.com/gradle/gradle/v8.6.0/gradle/wrapper/gradle-wrapper.jar";
+  
+  const downloadFile = (url: string, destPath: string): Promise<void> => {
+    return new Promise((resolve, reject) => {
+      const file = fs.createWriteStream(destPath);
+      https.get(url, (response) => {
+        if (response.statusCode === 301 || response.statusCode === 302) {
+          // Handle HTTP redirects (GitHub RAW CDN redirects to codeload/media URL)
+          const redirectUrl = response.headers.location;
+          if (redirectUrl) {
+            file.close();
+            downloadFile(redirectUrl, destPath).then(resolve).catch(reject);
+            return;
+          }
+        }
+        
+        if (response.statusCode !== 200) {
+          file.close();
+          fs.unlink(destPath, () => {});
+          reject(new Error(`Failed to download gradle-wrapper.jar, HTTP status: ${response.statusCode}`));
+          return;
+        }
+
+        response.pipe(file);
+        
+        file.on("finish", () => {
+          file.close();
+          console.log("✅ [Gradle Wrapper Builder] gradle-wrapper.jar successfully downloaded and restored!");
+          resolve();
+        });
+      }).on("error", (err) => {
+        file.close();
+        fs.unlink(destPath, () => {});
+        reject(err);
+      });
+    });
+  };
+
+  downloadFile(jarUrl, jarPath).catch((err) => {
+    console.error("❌ [Gradle Wrapper Builder] Error downloading official gradle-wrapper.jar binary:", err);
+  });
+}
 
 const app = express();
 const PORT = 3000;
